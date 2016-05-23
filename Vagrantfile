@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-TARGET_IP_ADDRESS="10.10.10.70"
+TARGET_IP_ADDRESS="10.11.11.11"
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
