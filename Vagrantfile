@@ -1,84 +1,71 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-TARGET_IP_ADDRESS="10.11.11.11"
+require_relative './script/authorize_key'
+
+# NOTE: currently using the same OS for all boxen
+OS="centos" # "debian" || "centos"
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
 # backwards compatibility). Please don't change it unless you know what
 # you're doing.
 Vagrant.configure(2) do |config|
-  # The most common configuration options are documented and commented below.
-  # For a complete reference, please see the online documentation at
-  # https://docs.vagrantup.com.
-
-  # Every Vagrant development environment requires a box. You can search for
-  # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "centos/7"
-
-  # Disable automatic box update checking. If you disable this, then
-  # boxes will only be checked for updates when the user runs
-  # `vagrant box outdated`. This is not recommended.
-  # config.vm.box_check_update = false
-
-  # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine. In the example below,
-  # accessing "localhost:8080" will access port 80 on the guest machine.
-  # config.vm.network "forwarded_port", guest: 80, host: 8080
-
-  # Create a private network, which allows host-only access to the machine
-  # using a specific IP.
-  # config.vm.network "private_network", ip: "192.168.33.10"
-  config.vm.network "private_network", ip: TARGET_IP_ADDRESS
-
-  # Create a public network, which generally matched to bridged network.
-  # Bridged networks make the machine appear as another physical device on
-  # your network.
-  # config.vm.network "public_network"
-  # config.vm.network "public_network", ip: TARGET_IP_ADDRESS, bridge: "en0: Wi-Fi (AirPort)"
-
-  # Share an additional folder to the guest VM. The first argument is
-  # the path on the host to the actual folder. The second argument is
-  # the path on the guest to mount the folder. And the optional third
-  # argument is a set of non-required options.
-  # config.vm.synced_folder "../data", "/vagrant_data"
-
-  # Provider-specific configuration so you can fine-tune various
-  # backing providers for Vagrant. These expose provider-specific options.
-  # Example for VirtualBox:
-  #
-  # config.vm.provider "virtualbox" do |vb|
-  #   # Display the VirtualBox GUI when booting the machine
-  #   vb.gui = true
-  #
-  #   # Customize the amount of memory on the VM:
-  #   vb.memory = "1024"
-  # end
-  #
-  # View the documentation for the provider you are using for more
-  # information on available options.
-  config.vm.provider "virtualbox" do |vb|
-    vb.name = "deploy_test"
+  package=""
+  if OS=="debian"
+    config.vm.box = "debian/jessie64"
+    package="_apt"
+  elsif OS=="centos"
+    config.vm.box = "centos/7"
+    package="_yum"
+  else
+    puts "you must set the OS variable to a valid value before continuing"
+    exit
   end
 
-  # Define a Vagrant Push strategy for pushing to Atlas. Other push strategies
-  # such as FTP and Heroku are also available. See the documentation at
-  # https://docs.vagrantup.com/v2/push/atlas.html for more information.
-  # config.push.define "atlas" do |push|
-  #   push.app = "YOUR_ATLAS_USERNAME/YOUR_APPLICATION_NAME"
-  # end
+  {
+    'ansiblebox' => '10.11.12.101',
+    #'db'          => '10.11.12.102',
+    #'solr'        => '10.11.12.103'
+  }.each do |short_name, ip|
+    config.vm.define short_name do |host|
+      host.vm.network 'private_network', ip: ip
+      host.vm.hostname = "#{short_name}.boxen.dev"
+      # presumes installation of https://github.com/cogitatio/vagrant-hostsupdater on host
+      host.hostsupdater.aliases = ["#{short_name}"]
 
-  # Enable provisioning with a shell script. Additional provisioners such as
-  # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
-  # documentation for more information about their specific syntax and use.
-  # config.vm.provision "shell", inline: <<-SHELL
-  #   sudo apt-get update
-  #   sudo apt-get install -y apache2
-  # SHELL
+      host.vm.provider "virtualbox" do |vb|
+        vb.name = "#{short_name}.boxen.dev"
+      end
 
-  # provision authorized ssh key for deployment
-  config.vm.provision "file", source: "public_ssh_key/authorized_key.pub", destination: ".ssh/authorized_key.pub"
+      # # provision authorized ssh key
+      # # NOTE: the problem with this approach is that *sometimes*
+      # # the file provisioner hasn't done its job by the time the prereqs script runs.
+      # # when this happens, the key is not yet in its expected place to be moved over
+      # # instead, calling the authorize_key.rb script modified from
+      # # http://hakunin.com/six-ansible-practices
+      # # this script just calls a file provisioner anyway,
+      # # I believe that doing it in the same script that uses the file
+      # # ensures that the provisioning step completes before the next tries to use it...
+      # host.vm.provision "file", source: "public_ssh_key/authorized_key.pub", destination: ".ssh/authorized_key.pub"
 
-  # do minimal provisioning to setup for the deployment
-  config.vm.provision "prerequisites", type: "shell", path: "script/prereqs.sh"
+      # do minimal provisioning (in order to do further work with Ansible)
+      host.vm.provision "prerequisites", type: "shell", path: "script/prereqs#{package}.sh"
+
+      # add authorized key to user created by the prereqs script
+      authorize_key host, "deploy", "~/.ssh/personal_dev.pub"
+    end
+  end
+
+  # include a playbook in provisioning
+  # vm (re)defined here must match a shortname above
+  config.vm.define "ansiblebox" do |ansiblebox|
+    ansiblebox.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbook#{package}.yml"
+    end
+  end
+
+  # REM:
+  # test: ansible all -m ping
+  # run playbooks post-provisioning: ansible-playbook playbook.yml -i hosts
 end

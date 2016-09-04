@@ -26,6 +26,9 @@ while [ "$1" != "" ]; do
   shift
 done
 
+echo "--> updating"
+sudo yum update
+
 echo "--> adding admin user $ADMIN..."
 sudo adduser $ADMIN
 id $ADMIN
@@ -44,17 +47,18 @@ else
   echo "sudo already granted to $ADMIN"
 fi
 
-echo "--> adding authorized_key..."
-if [ ! -f $ADMIN_HOME/.ssh/authorized_keys ]; then
-  sudo mkdir -p $ADMIN_HOME/.ssh
-  sudo touch $ADMIN_HOME/.ssh/authorized_keys
-  sudo sh -c "cat $SSH_USER_HOME/.ssh/authorized_key.pub >> $ADMIN_HOME/.ssh/authorized_keys"
-  sudo chown -R $ADMIN: $ADMIN_HOME/.ssh
-  sudo chmod 700 $ADMIN_HOME/.ssh
-  sudo chmod 600 $ADMIN_HOME/.ssh/*
-else
-  echo "authorized_key already added"
-fi
+# # NOTE: moved to authorize_key.rb,
+# echo "--> adding authorized_key..."
+# if [ ! -f $ADMIN_HOME/.ssh/authorized_keys ]; then
+#   sudo mkdir -p $ADMIN_HOME/.ssh
+#   sudo touch $ADMIN_HOME/.ssh/authorized_keys
+#   sudo bash -c "cat $SSH_USER_HOME/.ssh/authorized_key.pub >> $ADMIN_HOME/.ssh/authorized_keys"
+#   sudo chown -R $ADMIN: $ADMIN_HOME/.ssh
+#   sudo chmod 700 $ADMIN_HOME/.ssh
+#   sudo chmod 600 $ADMIN_HOME/.ssh/*
+# else
+#   echo "authorized_key already added"
+# fi
 
 echo "--> checking SELinux status"
 # sestatus
