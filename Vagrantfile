@@ -3,6 +3,11 @@
 
 require_relative './script/authorize_key'
 
+domain          = "boxen.dev"
+auto_user       = "deploy"
+auto_key        = "~/.ssh/personal_dev.pub"
+setup_complete  = false
+
 # NOTE: currently using the same OS for all boxen
 OS="centos" # "debian" || "centos"
 
@@ -30,42 +35,35 @@ Vagrant.configure(2) do |config|
   }.each do |short_name, ip|
     config.vm.define short_name do |host|
       host.vm.network 'private_network', ip: ip
-      host.vm.hostname = "#{short_name}.boxen.dev"
+      host.vm.hostname = "#{short_name}.#{domain}"
       # presumes installation of https://github.com/cogitatio/vagrant-hostsupdater on host
       host.hostsupdater.aliases = ["#{short_name}"]
+      # avoinding "Authentication failure" issue
+      host.ssh.insert_key = false
+      host.vm.synced_folder ".", "/vagrant", disabled: true
 
       host.vm.provider "virtualbox" do |vb|
-        vb.name = "#{short_name}.boxen.dev"
+        vb.name = "#{short_name}.#{domain}"
+        vb.memory = 512
+        vb.linked_clone = true
       end
-
-      # # provision authorized ssh key
-      # # NOTE: the problem with this approach is that *sometimes*
-      # # the file provisioner hasn't done its job by the time the prereqs script runs.
-      # # when this happens, the key is not yet in its expected place to be moved over
-      # # instead, calling the authorize_key.rb script modified from
-      # # http://hakunin.com/six-ansible-practices
-      # # this script just calls a file provisioner anyway,
-      # # I believe that doing it in the same script that uses the file
-      # # ensures that the provisioning step completes before the next tries to use it...
-      # host.vm.provision "file", source: "public_ssh_key/authorized_key.pub", destination: ".ssh/authorized_key.pub"
 
       # do minimal provisioning (in order to do further work with Ansible)
       host.vm.provision "prerequisites", type: "shell", path: "script/prereqs#{package}.sh"
 
       # add authorized key to user created by the prereqs script
-      authorize_key host, "deploy", "~/.ssh/personal_dev.pub"
+      authorize_key host, auto_user, auto_key
+
+      if short_name == "ansiblebox" # last in the list
+        setup_complete = true
+      end
+
+      if setup_complete
+        host.vm.provision "ansible" do |ansible|
+          # ansible.galaxy_role_file = "requirements.yml"
+          ansible.playbook = "playbook#{package}.yml"
+        end
+      end
     end
   end
-
-  # include a playbook in provisioning
-  # vm (re)defined here must match a shortname above
-  config.vm.define "ansiblebox" do |ansiblebox|
-    ansiblebox.vm.provision "ansible" do |ansible|
-      ansible.playbook = "playbook#{package}.yml"
-    end
-  end
-
-  # REM:
-  # test: ansible all -m ping
-  # run playbooks post-provisioning: ansible-playbook playbook.yml -i hosts
 end
